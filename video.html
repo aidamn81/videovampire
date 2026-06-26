@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>The Gothic Archive - Video Player</title>
+    <style>
+        :root { --bg: #0d0d0d; --accent: #800020; --border: #333; }
+        body { background: var(--bg); color: #d9d9d9; font-family: monospace; margin: 0; padding-top: 220px; }
+        
+        #player-wrapper { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 200px; 
+            background: #000; z-index: 1000; border-bottom: 8px solid var(--accent); touch-action: none;
+        }
+        #drag-handle { 
+            width: 100%; height: 20px; background: var(--accent); 
+            position: absolute; bottom: -20px; cursor: ns-resize; 
+            display: flex; align-items: center; justify-content: center; font-size: 10px; color: #fff;
+        }
+        
+        #media-container { width: 100%; height: 100%; background: #000; display: block; }
+        #media-player { width: 100%; height: 100%; border: none; display: block; }
+        #header-controls { padding: 10px; display: flex; gap: 10px; position: fixed; top: 200px; width: 100%; background: var(--bg); z-index: 999; box-sizing: border-box;}
+        
+        .modal-overlay { 
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.9); z-index: 3000; align-items: center; justify-content: center; 
+        }
+        .modal-content { background: #1a1a1a; padding: 20px; border: 1px solid var(--accent); width: 80%; max-width: 400px; position: relative; }
+        .close-btn { position: absolute; top: 5px; right: 10px; cursor: pointer; font-size: 20px; }
+        
+        .btn { background: #000; color: #fff; border: 1px solid var(--border); padding: 8px; cursor: pointer; font-size: 10px; text-transform: uppercase; }
+        .btn.active { background: var(--accent); border-color: #fff; }
+        #gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px; padding: 15px; }
+        .relic { border: 1px solid var(--border); padding: 5px; cursor: pointer; background: #141414; display: flex; flex-direction: column; justify-content: space-between; }
+        
+        /* Square Thumbnails */
+        .thumb { width: 100%; aspect-ratio: 1/1; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+        .thumb img { width: 100%; height: 100%; object-fit: cover; }
+        .thumb .play-icon { font-size: 24px; color: rgba(255,255,255,0.6); }
+        
+        .edit-ui { display: none; margin-top: 5px; border-top: 1px solid var(--border); padding-top: 5px; flex-wrap: wrap; gap: 5px; }
+        body.edit-mode .edit-ui { display: flex; }
+        .edit-ui button { background: #222; color: #fff; border: 1px solid var(--border); font-size: 9px; cursor: pointer; padding: 2px 4px; }
+        .edit-ui button:hover { background: var(--accent); }
+    </style>
+</head>
+<body>
+
+    <div id="player-wrapper">
+        <div id="media-container">
+            <video id="media-player" controls playsinline></video>
+        </div>
+        <div id="drag-handle">|| DRAG TO RESIZE ||</div>
+    </div>
+    
+    <div id="header-controls">
+        <button id="admin-btn" class="btn" onclick="checkAdmin()">Admin Login</button>
+        <button id="add-toggle" class="btn" style="display:none;" onclick="toggleModal('add-modal')">Add Link / Embed</button>
+        <button id="tag-toggle" class="btn" onclick="toggleModal('tag-modal')">Filter Tags</button>
+        <button id="save-btn" class="btn" style="display:none;" onclick="saveJson()">Save JSON</button>
+    </div>
+
+    <div id="add-modal" class="modal-overlay">
+        <div class="modal-content">
+            <span class="close-btn" onclick="toggleModal('add-modal')">&times;</span>
+            <h3>Add Media</h3>
+            <input type="text" id="new-title" placeholder="Title" style="width:95%; margin-bottom:10px; padding: 5px; background: #000; color:#fff; border:1px solid var(--border);">
+            <textarea id="new-url" placeholder="Direct URL or Full Iframe Embed Code" style="width:95%; height: 60px; margin-bottom:10px; padding: 5px; background: #000; color:#fff; border:1px solid var(--border); font-family: monospace;"></textarea>
+            <input type="text" id="new-img" placeholder="Cover Image URL (Optional)" style="width:95%; margin-bottom:10px; padding: 5px; background: #000; color:#fff; border:1px solid var(--border);">
+            <input type="text" id="new-tags" placeholder="Tags (comma separated)" style="width:95%; margin-bottom:15px; padding: 5px; background: #000; color:#fff; border:1px solid var(--border);">
+            <button class="btn" onclick="addItem()">Save Link</button>
+        </div>
+    </div>
+
+    <div id="tag-modal" class="modal-overlay">
+        <div class="modal-content">
+            <span class="close-btn" onclick="toggleModal('tag-modal')">&times;</span>
+            <h3>Filter Tags</h3>
+            <div id="tag-list" style="display:flex; flex-wrap:wrap; gap:5px;"></div>
+        </div>
+    </div>
+    
+    <div id="gallery-grid">Loading...</div>
+
+    <script>
+        let state = [];
+        let isEditMode = false;
+        let selectedTags = new Set();
+        const wrapper = document.getElementById('player-wrapper');
+        const handle = document.getElementById('drag-handle');
+        const controls = document.getElementById('header-controls');
+        let isResizing = false;
+
+        // Initialize and look for saved items or external data.json
+        async function init() {
+            const localData = localStorage.getItem('gothic_videos');
+            if (localData) {
+                state = JSON.parse(localData);
+                render();
+            } else {
+                try { 
+                    const res = await fetch('data.json?t=' + Date.now()); 
+                    state = await res.json(); 
+                    localStorage.setItem('gothic_videos', JSON.stringify(state));
+                    render(); 
+                } catch (e) { 
+                    console.error(e);
+                    state = [];
+                    document.getElementById('gallery-grid').innerHTML = "No links added yet. Log into Admin to add links."; 
+                }
+            }
+        }
+
+        // Handle Resizing
+        handle.addEventListener('pointerdown', (e) => {
+            isResizing = true;
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!isResizing) return;
+            let newHeight = Math.max(50, e.clientY);
+            wrapper.style.height = newHeight + 'px';
+            document.body.style.paddingTop = (newHeight + 20) + 'px';
+            controls.style.top = newHeight + 'px';
+        });
+
+        window.addEventListener('pointerup', () => {
+            isResizing = false;
+            document.body.style.userSelect = '';
+        });
+
+        function toggleModal(id) { 
+            const m = document.getElementById(id); 
+            m.style.display = m.style.display === 'flex' ? 'none' : 'flex'; 
+        }
+        
+        function checkAdmin() { 
+            if (prompt("Password:") === "1981") { 
+                isEditMode = true; 
+                document.body.classList.add('edit-mode'); 
+                document.getElementById('add-toggle').style.display = 'block'; 
+                document.getElementById('save-btn').style.display = 'block'; 
+                document.getElementById('admin-btn').style.display = 'none'; 
+            } 
+        }
+
+        // Helper function to extract src from an iframe string if user inputs raw code
+        function parseUrlInput(inputStr) {
+            inputStr = inputStr.trim();
+            if (inputStr.startsWith('<iframe')) {
+                const match = inputStr.match(/src=["']([^"']+)["']/);
+                return match ? match[1] : inputStr;
+            }
+            return inputStr;
+        }
+
+        function handleViewer(url) {
+            if (url.includes('thisvid.com')) {
+                window.open(url, '_blank');
+                return;
+            }
+
+            const container = document.getElementById('media-container');
+            container.innerHTML = ''; // Clear container
+
+            // If it contains an iframe source pattern, build an iframe element
+            if (url.includes('iframe') || url.includes('embed') || url.includes('player') || url.includes('videa.hu')) {
+                const iframe = document.createElement('iframe');
+                iframe.id = 'media-player';
+                // Make sure protocol is present
+                iframe.src = url.startsWith('//') ? window.location.protocol + url : url;
+                iframe.setAttribute('allowfullscreen', 'allowfullscreen');
+                iframe.setAttribute('frameborder', '0');
+                container.appendChild(iframe);
+            } else {
+                // Default back to native html5 video element
+                const video = document.createElement('video');
+                video.id = 'media-player';
+                video.src = url;
+                video.controls = true;
+                video.playsInline = true;
+                video.autoplay = true;
+                container.appendChild(video);
+            }
+        }
+
+        function addItem() {
+            let rawUrl = document.getElementById('new-url').value;
+            let cleanUrl = parseUrlInput(rawUrl);
+            
+            const newItem = {
+                title: document.getElementById('new-title').value || "Untitled Link",
+                url: cleanUrl,
+                img: document.getElementById('new-img').value,
+                tags: document.getElementById('new-tags').value
+            };
+            
+            state.push(newItem);
+            persistState();
+            render(); 
+            
+            // Clear fields and close
+            document.getElementById('new-title').value = '';
+            document.getElementById('new-url').value = '';
+            document.getElementById('new-img').value = '';
+            document.getElementById('new-tags').value = '';
+            toggleModal('add-modal');
+        }
+
+        function persistState() {
+            localStorage.setItem('gothic_videos', JSON.stringify(state));
+        }
+
+        function render() {
+            const allTags = [...new Set(state.flatMap(r => r.tags ? r.tags.split(',').map(t => t.trim()) : []))].filter(Boolean).sort();
+            const tagList = document.getElementById('tag-list');
+            tagList.innerHTML = '';
+            
+            allTags.forEach(t => {
+                const btn = document.createElement('button');
+                btn.className = `btn ${selectedTags.has(t) ? 'active' : ''}`;
+                btn.innerText = t;
+                btn.onclick = () => { 
+                    selectedTags.has(t) ? selectedTags.delete(t) : selectedTags.add(t); 
+                    render(); 
+                };
+                tagList.appendChild(btn);
+            });
+
+            const grid = document.getElementById('gallery-grid');
+            grid.innerHTML = '';
+            
+            if(state.length === 0) {
+                grid.innerHTML = "No videos in gallery.";
+                return;
+            }
+
+            state.forEach((r, i) => {
+                // Tag filtering matching algorithm
+                if (selectedTags.size > 0) {
+                    const itemTags = r.tags ? r.tags.split(',').map(t => t.trim()) : [];
+                    if (![...selectedTags].every(t => itemTags.includes(t))) return;
+                }
+
+                const d = document.createElement('div');
+                d.className = 'relic';
+                d.onclick = () => handleViewer(r.url);
+                d.innerHTML = `
+                    <div class="thumb">
+                        ${r.img ? `<img src="${r.img}">` : '<span class="play-icon">▶</span>'}
+                    </div>
+                    <div style="font-size:10px; margin-top:5px; word-break: break-word;">${r.title}</div>
+                    <div class="edit-ui">
+                        <button onclick="event.stopPropagation(); edit(${i}, 'title')">Rename</button>
+                        <button onclick="event.stopPropagation(); edit(${i}, 'url')">Link</button>
+                        <button onclick="event.stopPropagation(); edit(${i}, 'img')">Thumb</button>
+                        <button onclick="event.stopPropagation(); edit(${i}, 'tags')">Tags</button>
+                        <button onclick="event.stopPropagation(); del(${i})">Delete</button>
+                    </div>
+                `;
+                grid.appendChild(d);
+            });
+        }
+
+        function edit(i, key) { 
+            let val = prompt(`Change ${key}:`, state[i][key]); 
+            if(val !== null) { 
+                if(key === 'url') val = parseUrlInput(val);
+                state[i][key] = val; 
+                persistState();
+                render(); 
+            } 
+        }
+
+        function del(i) { 
+            if(confirm("Are you sure you want to delete this link?")) { 
+                state.splice(i, 1); 
+                persistState();
+                render(); 
+            } 
+        }
+
+        function saveJson() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state, null, 2));
+            const a = document.createElement('a');
+            a.setAttribute("href", dataStr);
+            a.setAttribute("download", "data.json");
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+
+        init();
+    </script>
+</body>
+</html>
