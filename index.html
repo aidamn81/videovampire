@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>The Gothic Archive - Entry</title>
+    <style>
+        :root {
+            --bg: #0d0d0d;
+            --accent: #800020;
+            --border: #333;
+            --text: #d9d9d9;
+        }
+        
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: monospace;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        #login-container {
+            width: 100%;
+            max-width: 300px;
+            padding: 30px;
+            background: #141414;
+            border: 1px solid var(--border);
+            text-align: center;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+        }
+
+        h1 {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 25px;
+            color: #fff;
+        }
+
+        input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            background: #000;
+            border: 1px solid var(--border);
+            color: #fff;
+            font-family: monospace;
+            font-size: 12px;
+            box-sizing: border-box;
+            text-align: center;
+            margin-bottom: 15px;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        input[type="password"]:focus {
+            border-color: var(--accent);
+        }
+
+        .btn {
+            width: 100%;
+            background: #000;
+            color: #fff;
+            border: 1px solid var(--border);
+            padding: 10px;
+            cursor: pointer;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-family: monospace;
+            transition: all 0.3s ease;
+        }
+
+        .btn:hover {
+            background: var(--accent);
+            border-color: #fff;
+        }
+
+        #error-msg {
+            color: var(--accent);
+            font-size: 10px;
+            margin-top: 15px;
+            min-height: 15px;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="login-container">
+        <h1>The Gothic Archive</h1>
+        <form id="login-form" onsubmit="validateForm(event)">
+            <input type="password" id="password-field" placeholder="ENTER PASSWORD" autocomplete="current-password" required>
+            <button type="submit" class="btn">Access</button>
+        </form>
+        <div id="error-msg"></div>
+    </div>
+
+    <script>
+        // Auto-focus password input on page load
+        window.onload = () => {
+            document.getElementById('password-field').focus();
+        };
+
+        function validateForm(event) {
+            event.preventDefault(); // Prevent standard page refresh
+            
+            const passwordInput = document.getElementById('password-field').value;
+            const errorDiv = document.getElementById('error-msg');
+            
+            // Password verification check
+            if (passwordInput === "neworleans") {
+                errorDiv.innerText = "";
+                window.location.href = "video.html";
+            } else {
+                errorDiv.innerText = "ACCESS DENIED";
+                document.getElementById('password-field').value = "";
+                document.getElementById('password-field').focus();
+            }
+        }
+    </script>
+</body>
+</html>
